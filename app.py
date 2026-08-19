@@ -53,7 +53,7 @@ if st.button("🔍 Analizar Caso"):
             
             with st.spinner("Analizando causas raíz y diagramas lógicos..."):
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model='gemini-2.0-flash',
                     contents=prompt,
                     config={'system_instruction': SYSTEM_INSTRUCTION}
                 )
