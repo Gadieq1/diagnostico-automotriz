@@ -170,16 +170,19 @@ if "chat_history" not in st.session_state:
 if "diagnostico_generado" not in st.session_state:
     st.session_state.diagnostico_generado = False
 
-# Función para inicializar modelo de Gemini disponible
+# Función para obtener un modelo compatible y activo
 def obtener_modelo_gemini(api_key):
     genai.configure(api_key=api_key)
-    # Intentar con gemini-2.5-flash primero, y como respaldo gemini-2.0-flash / gemini-1.5-flash-latest
-    for model_name in ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']:
+    modelos_a_probar = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
+    
+    for model_name in modelos_a_probar:
         try:
-            return genai.GenerativeModel(model_name)
+            m = genai.GenerativeModel(model_name)
+            return m
         except Exception:
             continue
-    return genai.GenerativeModel('gemini-2.5-flash')
+            
+    return genai.GenerativeModel('gemini-2.0-flash')
 
 # ============================================================
 # INTERFAZ GRÁFICA (PÁGINAS Y CHAT)
