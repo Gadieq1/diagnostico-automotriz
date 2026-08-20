@@ -170,6 +170,17 @@ if "chat_history" not in st.session_state:
 if "diagnostico_generado" not in st.session_state:
     st.session_state.diagnostico_generado = False
 
+# Función para inicializar modelo de Gemini disponible
+def obtener_modelo_gemini(api_key):
+    genai.configure(api_key=api_key)
+    # Intentar con gemini-2.5-flash primero, y como respaldo gemini-2.0-flash / gemini-1.5-flash-latest
+    for model_name in ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']:
+        try:
+            return genai.GenerativeModel(model_name)
+        except Exception:
+            continue
+    return genai.GenerativeModel('gemini-2.5-flash')
+
 # ============================================================
 # INTERFAZ GRÁFICA (PÁGINAS Y CHAT)
 # ============================================================
@@ -199,8 +210,7 @@ with tab1:
             st.warning("⚠️ Copia y pega un reporte del escáner para poder analizarlo.")
         else:
             try:
-                genai.configure(api_key=api_key)
-                model = genai.GenerativeModel('gemini-1.5-flash')
+                model = obtener_modelo_gemini(api_key)
                 
                 # Consultar únicamente soluciones que ya fueron confirmadas en el taller
                 casos_reales = obtener_casos_confirmados()
@@ -272,8 +282,7 @@ with tab1:
             st.session_state.chat_history.append({"role": "user", "parts": [pregunta_usuario]})
             
             try:
-                genai.configure(api_key=api_key)
-                model = genai.GenerativeModel('gemini-1.5-flash')
+                model = obtener_modelo_gemini(api_key)
                 
                 with st.spinner("Generando respuesta técnica..."):
                     chat = model.start_chat(history=st.session_state.chat_history[:-1])
