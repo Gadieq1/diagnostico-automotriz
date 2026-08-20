@@ -78,19 +78,23 @@ conectar_db()
 # ============================================================
 # 2. CONFIGURACIÓN DE LA API Y MODELO
 # ============================================================
-api_key = st.secrets.get("GEMINI_API_KEY")
 
-if not api_key:
-    api_key = st.sidebar.text_input("Ingresa tu Gemini API Key:", type="password")
+if "api_key" not in st.session_state:
+    st.session_state.api_key = st.secrets.get("GEMINI_API_KEY", "")
 
-if api_key:
-    genai.configure(api_key=api_key)
-    modelo_ia = genai.GenerativeModel('gemini-2.5-flash')
+with st.sidebar:
+    st.subheader("Configuración")
+    st.session_state.api_key = st.text_input("Ingresa tu Gemini API Key:", value=st.session_state.api_key, type="password")
 
-if "mensajes" not in st.session_state:
-    st.session_state.mensajes = [
-        {"role": "model", "content": "¡Qué tal, Gadiel! Sube tu PDF, foto o escribe la falla y te armo el plan de diagnóstico."}
-    ]
+if st.session_state.api_key:
+    try:
+        genai.configure(api_key=st.session_state.api_key)
+        modelo_ia = genai.GenerativeModel('gemini-2.5-flash')
+    except Exception as e:
+        st.error(f"Error al configurar la IA: {e}")
+else:
+    st.warning("⚠️ Por favor ingresa tu API Key en la barra lateral izquierda para continuar.")
+    st.stop()
 
 # ============================================================
 # 3. INTERFAZ DE CHAT Y PESTAÑAS
