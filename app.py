@@ -2,16 +2,15 @@ import streamlit as st
 import google.generativeai as genai
 import sqlite3
 from datetime import datetime
-import os
 
 st.set_page_config(
-    page_title="Asistente Automotriz - Gadiel",
+    page_title="IA Diagnóstico Automotriz - Gadiel",
     page_icon="🚗",
-    layout="centered"
+    layout="wide"
 )
 
 # ============================================================
-# 1. BASE DE DATOS
+# 1. BASE DE DATOS (MEMORIA DEL TALLER)
 # ============================================================
 DB_NAME = "memoria_taller.db"
 
@@ -76,88 +75,142 @@ def actualizar_caso_confirmado(caso_id, pruebas, solucion, resultado):
 conectar_db()
 
 # ============================================================
-# 2. CONFIGURACIÓN DE LA API Y MODELO (USANDO TU LLAVE)
+# 2. CONFIGURACIÓN DE LA API (FORMATO CLÁSICO QUE SÍ FUNCIONABA)
 # ============================================================
-with st.sidebar:
-    st.subheader("Configuración")
-    # Borramos cualquier lectura de secretos y te pedimos la llave manualmente para evitar errores
-    api_key_input = st.text_input("Ingresa tu Gemini API Key:", type="password")
+api_key = st.secrets.get("GEMINI_API_KEY")
 
-if api_key_input:
-    try:
-        genai.configure(api_key=api_key_input)
-        # Usamos el modelo 1.5-flash para máxima compatibilidad con tu llave
-        modelo_ia = genai.GenerativeModel('gemini-1.5-flash')
-    except Exception as e:
-        st.error(f"Error al configurar la IA: {e}")
-        st.stop()
-else:
-    st.warning("⚠️ Pega tu API Key en la barra lateral izquierda para continuar.")
-    st.stop()
+if not api_key:
+    with st.sidebar:
+        api_key = st.text_input("Gemini API Key:", type="password")
 
-if "mensajes" not in st.session_state:
-    st.session_state.mensajes = [
-        {"role": "model", "content": "¡Qué tal, Gadiel! Sube tu PDF, foto o escribe la falla y te armo el plan de diagnóstico."}
-    ]
+if api_key:
+    genai.configure(api_key=api_key)
+    # Modelo clásico estable que acepta tu llave original
+    modelo_ia = genai.GenerativeModel('gemini-1.5-flash')
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+if "diagnostico_generado" not in st.session_state:
+    st.session_state.diagnostico_generado = False
 
 # ============================================================
-# 3. INTERFAZ DE CHAT
+# 3. INTERFAZ Y PESTAÑAS
 # ============================================================
-st.title("🚗 Asistente Automotriz de Gadiel")
+st.title("🚗 Asistente de Diagnóstico Automotriz de Gadiel")
 
-pestana_chat, pestana_confirmar, pestana_historial = st.tabs(["💬 Chat", "✅ Registrar Solución", "📚 Historial"])
+tab1, tab2, tab3 = st.tabs([
+    "🔍 Nuevo Diagnóstico y Chat", 
+    "✅ Confirmar Solución / Caso Real", 
+    "📚 Base de Conocimientos del Taller"
+])
 
-with pestana_chat:
-    for msg in st.session_state.mensajes:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
+# ------------------------------------------------------------
+# PESTAÑA 1: NUEVO DIAGNÓSTICO
+# ------------------------------------------------------------
+with tab1:
+    st.write("Pega el reporte de tu escáner. La IA analizará los códigos y te dará el plan de diagnóstico.")
+    
+    vehiculo_info = st.text_input("🚗 Vehículo (Marca, Modelo, Año, Motor):", placeholder="Ej: Nissan Versa 2018 1.6L")
+    reporte = st.text_area("📋 Reporte del Escáner:", height=180, placeholder="Pega aquí el reporte completo...")
+    sintomas = st.text_area("💬 Síntomas adicionales / Notas:", height=90, placeholder="Ej: Tiembla en ralentí...")
 
-    archivo_adjunto = st.file_uploader("📎 Adjuntar reporte (PDF o Imagen)", type=["pdf", "png", "jpg", "jpeg"])
+    if st.button("🔍 Analizar e Iniciar Diagnóstico", type="primary"):
+        if not api_key:
+            st.error("❌ Falta la API Key.")
+        elif not reporte.strip():
+            st.warning("⚠️ Pega el reporte del escáner.")
+        else:
+            try:
+                casos_reales = obtener_casos_confirmados()
+                contexto_experiencia = ""
+                if casos_reales:
+                    contexto_experiencia = "\n--- EXPERIENCIA PREVIA CONFIRMADA EN ESTE TALLER ---\n"
+                    for caso in casos_reales[:5]:
+                        contexto_experiencia += f"- Vehículo: {caso[2]} | Síntomas: {caso[3]} | Solución Real: {caso[6]}\n"
 
-    if prompt := st.chat_input("Escribe tu duda..."):
-        st.session_state.mensajes.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.write(prompt)
-
-        try:
-            with st.spinner("🧠 Analizando..."):
-                contenido_envio = [f"Eres experto en diagnóstico automotriz. Analiza esto: {prompt}"]
+                prompt_inicial = f"""
+                Eres un Máster en Diagnóstico Automotriz y asistente técnico de taller.
+                Analiza el reporte tomando en cuenta la experiencia previa de reparaciones reales en este taller.
+                {contexto_experiencia}
+                --- DATOS DEL VEHÍCULO ---
+                {vehiculo_info if vehiculo_info else "Extraer del reporte."}
+                --- REPORTE ---
+                {reporte}
+                --- SÍNTOMAS ---
+                {sintomas if sintomas else "Ninguno."}
+                """
                 
-                if archivo_adjunto:
-                    temp_path = f"temp_{archivo_adjunto.name}"
-                    with open(temp_path, "wb") as f: f.write(archivo_adjunto.getbuffer())
-                    archivo_subido = genai.upload_file(temp_path)
-                    contenido_envio.append(archivo_subido)
-                    os.remove(temp_path)
+                with st.spinner("🧠 Analizando reporte..."):
+                    response = modelo_ia.generate_content(prompt_inicial)
+                    
+                    st.session_state.chat_history = [
+                        {"role": "user", "parts": [prompt_inicial]},
+                        {"role": "model", "parts": [response.text]}
+                    ]
+                    st.session_state.diagnostico_generado = True
+                    
+                    guardar_diagnostico(
+                        vehiculo_info if vehiculo_info else "No especificado",
+                        reporte,
+                        sintomas,
+                        response.text,
+                        estado="PENDIENTE"
+                    )
+                    st.success("¡Diagnóstico generado con éxito!")
+            except Exception as e:
+                st.error(f"❌ Error al conectar con la IA: {e}")
 
-                respuesta = modelo_ia.generate_content(contenido_envio)
-                st.session_state.mensajes.append({"role": "model", "content": respuesta.text})
-                with st.chat_message("model"):
-                    st.write(respuesta.text)
+    if st.session_state.diagnostico_generado:
+        st.markdown("---")
+        st.subheader("💬 Chat de Preguntas Técnicas")
+        for mensaje in st.session_state.chat_history[1:]:
+            rol = "🤖 IA" if mensaje["role"] == "model" else "👨‍🔧 Tú"
+            with st.chat_message(mensaje["role"]):
+                st.write(f"**{rol}:** {mensaje['parts'][0]}")
 
-                guardar_diagnostico("Consulta", prompt[:100], "Chat", respuesta.text)
+        pregunta_usuario = st.chat_input("Escribe tu duda técnica...")
+        if pregunta_usuario:
+            st.session_state.chat_history.append({"role": "user", "parts": [pregunta_usuario]})
+            try:
+                chat_sesion = modelo_ia.start_chat(history=[
+                    {"role": m["role"], "parts": m["parts"]} for m in st.session_state.chat_history[:-1]
+                ])
+                respuesta = chat_sesion.send_message(pregunta_usuario)
+                st.session_state.chat_history.append({"role": "model", "parts": [respuesta.text]})
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Error en el chat: {e}")
 
-        except Exception as e:
-            st.error(f"❌ Error al conectar con la IA: {e}")
-
-# ... (Las secciones de pestana_confirmar y pestana_historial siguen igual que antes)
-with pestana_confirmar:
-    st.header("✅ Registrar Solución")
+# ------------------------------------------------------------
+# PESTAÑA 2: CONFIRMAR LA SOLUCIÓN
+# ------------------------------------------------------------
+with tab2:
+    st.header("✅ Registrar Solución Confirmada")
     todos = obtener_historial()
     pendientes = [c for c in todos if c[9] == 'PENDIENTE']
-    if not pendientes: st.success("🎉 Todo al día.")
+    if not pendientes:
+        st.success("🎉 No hay diagnósticos pendientes.")
     else:
-        opciones = {f"ID: {c[0]}": c[0] for c in pendientes}
-        sel = st.selectbox("Selecciona caso:", list(opciones.keys()))
-        cid = opciones[sel]
-        pruebas = st.text_area("🔧 Pruebas:")
-        sol = st.text_area("✔️ Solución:")
-        if st.button("Guardar"):
-            actualizar_caso_confirmado(cid, pruebas, sol, "Reparado")
-            st.rerun()
+        opciones = {f"ID: {c[0]} | {c[2]}": c[0] for c in pendientes}
+        seleccion = st.selectbox("Vehículo reparado:", list(opciones.keys()))
+        caso_id = opciones[seleccion]
+        
+        pruebas_hechas = st.text_area("🔧 Pruebas realizadas:")
+        solucion_real = st.text_area("✔️ Solución Real / Pieza Cambiada:")
+        resultado_final = st.selectbox("Estado final:", ["Reparado con éxito", "Cliente no autorizó"])
+        
+        if st.button("💾 Guardar en la Memoria"):
+            if solucion_real.strip():
+                actualizar_caso_confirmado(caso_id, pruebas_hechas, solucion_real, resultado_final)
+                st.success("¡Guardado!")
+                st.rerun()
 
-with pestana_historial:
-    st.header("📚 Casos Exitosos")
-    for ex in obtener_casos_confirmados():
-        with st.expander(f"Caso #{ex[0]}"):
-            st.write(f"**Solución:** {ex[6]}")
+# ------------------------------------------------------------
+# PESTAÑA 3: HISTORIAL
+# ------------------------------------------------------------
+with tab3:
+    st.header("📚 Historial del Taller")
+    for caso in obtener_casos_confirmados():
+        with st.expander(f"⭐ {caso[2]} - {caso[1]}"):
+            st.write(f"**Solución:** {caso[6]}")
