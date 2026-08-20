@@ -78,7 +78,6 @@ conectar_db()
 # ============================================================
 # 2. CONFIGURACIÓN DE LA API Y MODELO
 # ============================================================
-
 if "api_key" not in st.session_state:
     st.session_state.api_key = st.secrets.get("GEMINI_API_KEY", "")
 
@@ -96,6 +95,11 @@ else:
     st.warning("⚠️ Por favor ingresa tu API Key en la barra lateral izquierda para continuar.")
     st.stop()
 
+if "mensajes" not in st.session_state:
+    st.session_state.mensajes = [
+        {"role": "model", "content": "¡Qué tal, Gadiel! Sube tu PDF, foto o escribe la falla y te armo el plan de diagnóstico."}
+    ]
+
 # ============================================================
 # 3. INTERFAZ DE CHAT Y PESTAÑAS
 # ============================================================
@@ -108,7 +112,6 @@ with pestana_chat:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
 
-    # Ajustado para que el explorador móvil acepte documentos/PDFs y fotos libremente
     archivo_adjunto = st.file_uploader(
         "📎 Adjuntar reporte (PDF o Imagen)", 
         type=["pdf", "png", "jpg", "jpeg", "application/pdf"], 
@@ -116,8 +119,8 @@ with pestana_chat:
     )
 
     if prompt := st.chat_input("Escribe tu duda o describe la falla..."):
-        if not api_key:
-            st.error("❌ Falta configurar la API Key.")
+        if not st.session_state.api_key:
+            st.error("❌ Falta configurar una API Key.")
         else:
             texto_usuario = prompt if prompt else "Analiza el archivo adjunto."
             st.session_state.mensajes.append({"role": "user", "content": texto_usuario})
@@ -169,7 +172,7 @@ with pestana_chat:
                     )
 
             except Exception as e:
-                st.error(f"❌ Error: {e}")
+                st.error(f"❌ Error al conectar con la IA: {e}")
 
 with pestana_confirmar:
     st.header("✅ Registrar Solución Confirmada")
