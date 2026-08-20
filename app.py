@@ -1,5 +1,5 @@
 import streamlit as st
-from google import genai
+import google.generativeai as genai
 import sqlite3
 from datetime import datetime
 
@@ -18,7 +18,6 @@ DB_NAME = "memoria_taller.db"
 def conectar_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-
     c.execute("""
         CREATE TABLE IF NOT EXISTS historial (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,7 +32,6 @@ def conectar_db():
             estado TEXT
         )
     """)
-
     conn.commit()
     return conn
 
@@ -41,12 +39,10 @@ def guardar_diagnostico(vehiculo, reporte, sintomas, diagnostico, pruebas="", so
     conn = conectar_db()
     c = conn.cursor()
     fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
     c.execute("""
         INSERT INTO historial (fecha, vehiculo, reporte_ediag, sintomas, diagnostico_ia, pruebas_realizadas, solucion_confirmada, resultado_reparacion, estado)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (fecha_actual, vehiculo, reporte, sintomas, diagnostico, pruebas, solucion, resultado, estado))
-
     conn.commit()
     conn.close()
 
@@ -77,11 +73,10 @@ def actualizar_caso_confirmado(caso_id, pruebas, solucion, resultado):
     conn.commit()
     conn.close()
 
-# Inicializar Base de Datos
 conectar_db()
 
 # ============================================================
-# 2. CONFIGURACIÓN DE CLAVE API Y MODELO
+# 2. CONFIGURACIÓN DE LA API Y MODELO CLÁSICO
 # ============================================================
 
 api_key = st.secrets.get("GEMINI_API_KEY")
@@ -91,14 +86,17 @@ if not api_key:
         st.warning("⚠️ No se encontró la API Key en los Secrets de Streamlit.")
         api_key = st.text_input("Ingresa tu Gemini API Key manualmente:", type="password")
 
+if api_key:
+    # AQUÍ ES DONDE SE CONFIGURA Y LLAMA A LA IA OFICIALMENTE
+    genai.configure(api_key=api_key)
+    # Usamos gemini-1.5-flash porque es el modelo estable y rápido
+    modelo_ia = genai.GenerativeModel('gemini-1.5-flash')
+
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
 if "diagnostico_generado" not in st.session_state:
     st.session_state.diagnostico_generado = False
-
-# Modelo activo estándar de Google
-MODELO_ACTIVO = "gemini-1.5-flash"
 
 # ============================================================
 # 3. INTERFAZ Y PESTAÑAS
@@ -129,15 +127,13 @@ with tab1:
             st.warning("⚠️ Copia y pega un reporte del escáner para poder analizarlo.")
         else:
             try:
-                client = genai.Client(api_key=api_key)
-                
                 # Cargar historial del taller para aprendizaje continuo
                 casos_reales = obtener_casos_confirmados()
                 contexto_experiencia = ""
                 if casos_reales:
                     contexto_experiencia = "\n--- EXPERIENCIA PREVIA CONFIRMADA EN ESTE TALLER ---\n"
                     for caso in casos_reales[:5]:
-                        contexto_experiencia += f"- Vehículo: {caso[2]} | Síntomas: {caso[3]} | Solución Real Solucionada: {caso[6]}\n"
+                        contexto_experiencia += f"- Vehículo: {caso[2]} | Síntomas: {caso[3]} | Solución Real: {caso[6]}\n"
 
                 prompt_inicial = f"""
                 Eres un Máster en Diagnóstico Automotriz y asistente técnico de taller.
@@ -158,15 +154,13 @@ with tab1:
                 1. **Información del Vehículo:** Datos identificados.
                 2. **Resumen de Módulos y Códigos DTC:** Agrupados técnicamente.
                 3. **Causa Raíz Probable:** Relación entre códigos y falla real.
-                4. **Diagrama / Esquema de Pines (Texto):** Esquema de pines de sensores/actuadores involucrados (alimentación, tierra, señal).
+                4. **Diagrama / Esquema de Pines (Texto):** Esquema de pines de sensores/actuadores involucrados.
                 5. **Plan de Pruebas con Multímetro/Osciloscopio:** Valores esperados de voltaje, resistencia y señales.
                 """
                 
                 with st.spinner("🧠 Analizando reporte y buscando en la memoria del taller..."):
-                    response = client.models.generate_content(
-                        model=MODELO_ACTIVO,
-                        contents=prompt_inicial
-                    )
+                    # >>> AQUÍ ES EXACTAMENTE DONDE SE MANDA LLAMAR A LA IA <<<
+                    response = modelo_ia.generate_content(prompt_inicial)
                     
                     st.session_state.chat_history = [
                         {"role": "user", "parts": [prompt_inicial]},
@@ -189,7 +183,7 @@ with tab1:
     if st.session_state.diagnostico_generado:
         st.markdown("---")
         st.subheader("💬 Chat de Preguntas Técnicas y Pruebas")
-        st.info("💡 Haz preguntas específicas sobre mediciones, colores de cables o cómo probar un sensor en particular.")
+        st.info("💡 Haz preguntas específicas sobre mediciones o cómo probar un sensor en particular.")
 
         for mensaje in st.session_state.chat_history[1:]:
             rol = "🤖 IA Técnico" if mensaje["role"] == "model" else "👨‍🔧 Tú"
@@ -203,15 +197,13 @@ with tab1:
             st.session_state.chat_history.append({"role": "user", "parts": [pregunta_usuario]})
             
             try:
-                client = genai.Client(api_key=api_key)
-                
                 with st.spinner("Generando respuesta técnica..."):
-                    contents_history = [m["parts"][0] for m in st.session_state.chat_history]
+                    # Convertimos el historial al formato compatible con la librería clásica
+                    chat_sesion = modelo_ia.start_chat(history=[
+                        {"role": m["role"], "parts": m["parts"]} for m in st.session_state.chat_history[:-1]
+                    ])
+                    respuesta = chat_sesion.send_message(pregunta_usuario)
                     
-                    respuesta = client.models.generate_content(
-                        model=MODELO_ACTIVO,
-                        contents=contents_history
-                    )
                     st.session_state.chat_history.append({"role": "model", "parts": [respuesta.text]})
                     st.rerun()
             except Exception as e:
