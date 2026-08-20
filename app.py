@@ -98,7 +98,7 @@ if "diagnostico_generado" not in st.session_state:
     st.session_state.diagnostico_generado = False
 
 # Modelo activo estándar de Google
-MODELO_ACTIVO = "gemini-2.5-flash"
+MODELO_ACTIVO = "gemini-1.5-flash"
 
 # ============================================================
 # 3. INTERFAZ Y PESTAÑAS
