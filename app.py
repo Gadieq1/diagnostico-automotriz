@@ -102,7 +102,7 @@ if "diagnostico_generado" not in st.session_state:
 # 3. INTERFAZ Y PESTAÑAS
 # ============================================================
 
-st.title("🚗 Asistente de Diagnóstico Automotriz y Memoria de Taller")
+st.title("🚗 Asistente de Diagnóstico Automotriz de Gadiel")
 
 tab1, tab2, tab3 = st.tabs([
     "🔍 Nuevo Diagnóstico y Chat", 
