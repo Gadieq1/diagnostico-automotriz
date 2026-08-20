@@ -1,5 +1,5 @@
 import streamlit as st
-import google.generativeai as genai
+from google import genai
 import sqlite3
 from datetime import datetime
 
@@ -153,7 +153,7 @@ def actualizar_caso_confirmado(caso_id, pruebas, solucion, resultado):
 conectar_db()
 
 # ============================================================
-# CONFIGURACIÓN DE GEMINI API KEY Y MODELO
+# CONFIGURACIÓN DE GEMINI API KEY
 # ============================================================
 
 api_key = st.secrets.get("GEMINI_API_KEY")
@@ -169,11 +169,6 @@ if "chat_history" not in st.session_state:
 
 if "diagnostico_generado" not in st.session_state:
     st.session_state.diagnostico_generado = False
-
-def obtener_modelo_gemini(api_key):
-    genai.configure(api_key=api_key)
-    # Usar el identificador oficial estático para prevenir incompatibilidades
-    return genai.GenerativeModel('gemini-1.5-flash')
 
 # ============================================================
 # INTERFAZ GRÁFICA (PÁGINAS Y CHAT)
@@ -204,7 +199,7 @@ with tab1:
             st.warning("⚠️ Copia y pega un reporte del escáner para poder analizarlo.")
         else:
             try:
-                model = obtener_modelo_gemini(api_key)
+                client = genai.Client(api_key=api_key)
                 
                 # Consultar únicamente soluciones que ya fueron confirmadas en el taller
                 casos_reales = obtener_casos_confirmados()
@@ -238,7 +233,10 @@ with tab1:
                 """
                 
                 with st.spinner("🧠 Analizando reporte y buscando casos similares en la memoria..."):
-                    response = model.generate_content(prompt_inicial)
+                    response = client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=prompt_inicial
+                    )
                     
                     st.session_state.chat_history = [
                         {"role": "user", "parts": [prompt_inicial]},
@@ -276,11 +274,18 @@ with tab1:
             st.session_state.chat_history.append({"role": "user", "parts": [pregunta_usuario]})
             
             try:
-                model = obtener_modelo_gemini(api_key)
+                client = genai.Client(api_key=api_key)
                 
                 with st.spinner("Generando respuesta técnica..."):
-                    chat = model.start_chat(history=st.session_state.chat_history[:-1])
-                    respuesta = chat.send_message(pregunta_usuario)
+                    # Construir historial para la API
+                    contents_history = []
+                    for m in st.session_state.chat_history:
+                        contents_history.append(m["parts"][0])
+                    
+                    respuesta = client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=contents_history
+                    )
                     st.session_state.chat_history.append({"role": "model", "parts": [respuesta.text]})
                     st.rerun()
             except Exception as e:
