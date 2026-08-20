@@ -86,7 +86,7 @@ if not api_key:
 if api_key:
     genai.configure(api_key=api_key)
     # Modelo clásico estable que acepta tu llave original
-    modelo_ia = genai.GenerativeModel('gemini-1.5-flash')
+    modelo_ia = genai.GenerativeModel('gemini-3.6-flash')
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
