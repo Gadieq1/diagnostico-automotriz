@@ -2,6 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 import sqlite3
 from datetime import datetime
+import os
 
 st.set_page_config(
     page_title="IA Diagnóstico Automotriz - Gadiel",
@@ -76,7 +77,7 @@ def actualizar_caso_confirmado(caso_id, pruebas, solucion, resultado):
 conectar_db()
 
 # ============================================================
-# 2. CONFIGURACIÓN DE LA API Y MODELO CLÁSICO
+# 2. CONFIGURACIÓN DE LA API Y MODELO MULTIMODAL
 # ============================================================
 
 api_key = st.secrets.get("GEMINI_API_KEY")
@@ -87,10 +88,9 @@ if not api_key:
         api_key = st.text_input("Ingresa tu Gemini API Key manualmente:", type="password")
 
 if api_key:
-    # AQUÍ ES DONDE SE CONFIGURA Y LLAMA A LA IA OFICIALMENTE
     genai.configure(api_key=api_key)
-    # Usamos gemini-2.5-flash porque es el modelo estable y rápido
-    modelo_ia = genai.GenerativeModel('gemini-3.6-flash')
+    # Usamos gemini-2.5-flash que procesa excelente texto, imágenes y PDFs nativamente
+    modelo_ia = genai.GenerativeModel('gemini-2.5-flash')
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
@@ -111,56 +111,82 @@ tab1, tab2, tab3 = st.tabs([
 ])
 
 # ------------------------------------------------------------
-# PESTAÑA 1: NUEVO DIAGNÓSTICO
+# PESTAÑA 1: NUEVO DIAGNÓSTICO (CON SOPORTE DE PDF E IMÁGENES)
 # ------------------------------------------------------------
 with tab1:
-    st.write("Pega el reporte de **Ediag**. La IA extraerá los datos, relacionará códigos y fallas y te dará un plan de diagnóstico.")
+    st.write("Sube el **reporte en PDF** de tu escáner o **fotografías** (evidencias, multímetro, componentes) junto con notas para generar tu plan de diagnóstico.")
     
     vehiculo_info = st.text_input("🚗 Vehículo (Marca, Modelo, Año, Motor):", placeholder="Ej: Nissan Versa 2018 1.6L")
-    reporte = st.text_area("📋 Reporte del Escáner (Ediag):", height=180, placeholder="Pega aquí el reporte completo de Ediag...")
-    sintomas = st.text_area("💬 Síntomas adicionales / Notas:", height=90, placeholder="Ej: Tiembla en ralentí, pierde potencia en subidas...")
+    
+    # NUEVO: Selector de archivos para PDF o Imágenes
+    archivo_subido = st.file_uploader(
+        "📄 Sube el Reporte PDF del Escáner o 🖼️ Foto(s) de evidencia:",
+        type=["pdf", "png", "jpg", "jpeg"],
+        accept_multiple_files=False
+    )
+    
+    # Opción de texto por si quiere complementar o pegar manualmente
+    reporte_texto = st.text_area("📋 O pega notas adicionales del reporte / escáner:", height=100, placeholder="Notas extra o texto opcional...")
+    sintomas = st.text_area("💬 Síntomas adicionales / Notas del cliente:", height=90, placeholder="Ej: Tiembla en ralentí, pierde potencia en subidas...")
 
     if st.button("🔍 Analizar e Iniciar Diagnóstico", type="primary"):
         if not api_key:
             st.error("❌ Falta la API Key. Por favor verifícala en los Secrets de Streamlit.")
-        elif not reporte.strip():
-            st.warning("⚠️ Copia y pega un reporte del escáner para poder analizarlo.")
+        elif not archivo_subido and not reporte_texto.strip():
+            st.warning("⚠️ Sube al menos un archivo (PDF/Foto) o escribe el reporte para poder analizarlo.")
         else:
             try:
-                # Cargar historial del taller para aprendizaje continuo
-                casos_reales = obtener_casos_confirmados()
-                contexto_experiencia = ""
-                if casos_reales:
-                    contexto_experiencia = "\n--- EXPERIENCIA PREVIA CONFIRMADA EN ESTE TALLER ---\n"
-                    for caso in casos_reales[:5]:
-                        contexto_experiencia += f"- Vehículo: {caso[2]} | Síntomas: {caso[3]} | Solución Real: {caso[6]}\n"
+                with st.spinner("🧠 Procesando archivo y buscando en la memoria del taller..."):
+                    # Cargar historial del taller para aprendizaje continuo
+                    casos_reales = obtener_casos_confirmados()
+                    contexto_experiencia = ""
+                    if casos_reales:
+                        contexto_experiencia = "\n--- EXPERIENCIA PREVIA CONFIRMADA EN ESTE TALLER ---\n"
+                        for caso in casos_reales[:5]:
+                            contexto_experiencia += f"- Vehículo: {caso[2]} | Síntomas: {caso[3]} | Solución Real: {caso[6]}\n"
 
-                prompt_inicial = f"""
-                Eres un Máster en Diagnóstico Automotriz y asistente técnico de taller.
-                Analiza el reporte del escáner tomando en cuenta la experiencia previa de reparaciones reales en este taller.
-                
-                {contexto_experiencia}
-                
-                --- DATOS DEL VEHÍCULO ---
-                {vehiculo_info if vehiculo_info else "Extraer del reporte si está disponible."}
-                
-                --- REPORTE EDIAG ---
-                {reporte}
-                
-                --- SÍNTOMAS ---
-                {sintomas if sintomas else "Ninguno reportado."}
-                
-                Por favor estructura la respuesta así:
-                1. **Información del Vehículo:** Datos identificados.
-                2. **Resumen de Módulos y Códigos DTC:** Agrupados técnicamente.
-                3. **Causa Raíz Probable:** Relación entre códigos y falla real.
-                4. **Diagrama / Esquema de Pines (Texto):** Esquema de pines de sensores/actuadores involucrados.
-                5. **Plan de Pruebas con Multímetro/Osciloscopio:** Valores esperados de voltaje, resistencia y señales.
-                """
-                
-                with st.spinner("🧠 Analizando reporte y buscando en la memoria del taller..."):
-                    # >>> AQUÍ ES EXACTAMENTE DONDE SE MANDA LLAMAR A LA IA <<<
-                    response = modelo_ia.generate_content(prompt_inicial)
+                    prompt_inicial = f"""
+                    Eres un Máster en Diagnóstico Automotriz y asistente técnico de taller de Gadiel.
+                    Analiza el archivo adjunto (PDF del escáner y/o imágenes) y los datos proporcionados, tomando en cuenta la experiencia previa de reparaciones reales en este taller.
+                    
+                    {contexto_experiencia}
+                    
+                    --- DATOS DEL VEHÍCULO ---
+                    {vehiculo_info if vehiculo_info else "Extraer del reporte o archivo si está disponible."}
+                    
+                    --- NOTAS / SÍNTOMAS ---
+                    {sintomas if sintomas else "Ninguno reportado."}
+                    {reporte_texto}
+                    
+                    Por favor estructura la respuesta así:
+                    1. **Información del Vehículo:** Datos identificados.
+                    2. **Resumen de Módulos y Códigos DTC:** Agrupados técnicamente.
+                    3. **Causa Raíz Probable:** Relación entre códigos y falla real.
+                    4. **Diagrama / Esquema de Pines (Texto):** Esquema de pines de sensores/actuadores involucrados.
+                    5. **Plan de Pruebas con Multímetro/Osciloscopio:** Valores esperados de voltaje, resistencia y señales.
+                    """
+
+                    # Lista de contenidos para enviar al modelo multimodal
+                    contenido_prompt = [prompt_inicial]
+
+                    # Si el usuario subió un archivo, lo procesamos con genai.upload_file
+                    if archivo_subido is not None:
+                        # Guardamos temporalmente el archivo subido para enviarlo a la API
+                        temp_path = f"temp_file_{archivo_subido.name}"
+                        with open(temp_path, "wb") as f:
+                            f.write(archivo_subido.getbuffer())
+                        
+                        # Subimos el archivo usando la utilidad de Google GenAI
+                        with st.spinner("📤 Subiendo archivo a la IA..."):
+                            archivo_ia = genai.upload_file(temp_path)
+                            contenido_prompt.append(archivo_ia)
+                        
+                        # Limpiamos el archivo local temporal
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+
+                    # Llamada a la IA con soporte multimodal
+                    response = modelo_ia.generate_content(contenido_prompt)
                     
                     st.session_state.chat_history = [
                         {"role": "user", "parts": [prompt_inicial]},
@@ -168,16 +194,18 @@ with tab1:
                     ]
                     st.session_state.diagnostico_generado = True
                     
+                    # Guardar en base de datos
+                    nombre_archivo_reg = archivo_subido.name if archivo_subido else "Texto manual"
                     guardar_diagnostico(
                         vehiculo_info if vehiculo_info else "No especificado",
-                        reporte,
+                        f"Archivo: {nombre_archivo_reg} | Notas: {reporte_texto}",
                         sintomas,
                         response.text,
                         estado="PENDIENTE"
                     )
                     
             except Exception as e:
-                st.error(f"❌ Error al conectar con la IA: {e}")
+                st.error(f"❌ Error al procesar el archivo o conectar con la IA: {e}")
 
     # CHAT CONTINUO DE SEGUIMIENTO
     if st.session_state.diagnostico_generado:
@@ -189,7 +217,9 @@ with tab1:
             rol = "🤖 IA Técnico" if mensaje["role"] == "model" else "👨‍🔧 Tú"
             with st.chat_message(mensaje["role"]):
                 st.write(f"**{rol}:**")
-                st.write(mensaje["parts"][0])
+                for part in mensaje["parts"]:
+                    if isinstance(part, str):
+                        st.write(part)
 
         pregunta_usuario = st.chat_input("Escribe tu duda técnica aquí...")
         
@@ -198,9 +228,9 @@ with tab1:
             
             try:
                 with st.spinner("Generando respuesta técnica..."):
-                    # Convertimos el historial al formato compatible con la librería clásica
                     chat_sesion = modelo_ia.start_chat(history=[
-                        {"role": m["role"], "parts": m["parts"]} for m in st.session_state.chat_history[:-1]
+                        {"role": m["role"], "parts": [p for p in m["parts"] if isinstance(p, str)]} 
+                        for m in st.session_state.chat_history[:-1]
                     ])
                     respuesta = chat_sesion.send_message(pregunta_usuario)
                     
