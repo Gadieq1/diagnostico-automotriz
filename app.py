@@ -153,7 +153,7 @@ def actualizar_caso_confirmado(caso_id, pruebas, solucion, resultado):
 conectar_db()
 
 # ============================================================
-# CONFIGURACIÓN DE GEMINI API KEY
+# CONFIGURACIÓN DE GEMINI API KEY Y MODELO
 # ============================================================
 
 api_key = st.secrets.get("GEMINI_API_KEY")
@@ -170,19 +170,10 @@ if "chat_history" not in st.session_state:
 if "diagnostico_generado" not in st.session_state:
     st.session_state.diagnostico_generado = False
 
-# Función para obtener un modelo compatible y activo
 def obtener_modelo_gemini(api_key):
     genai.configure(api_key=api_key)
-    modelos_a_probar = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
-    
-    for model_name in modelos_a_probar:
-        try:
-            m = genai.GenerativeModel(model_name)
-            return m
-        except Exception:
-            continue
-            
-    return genai.GenerativeModel('gemini-2.0-flash')
+    # Usar el identificador oficial estático para prevenir incompatibilidades
+    return genai.GenerativeModel('gemini-1.5-flash')
 
 # ============================================================
 # INTERFAZ GRÁFICA (PÁGINAS Y CHAT)
