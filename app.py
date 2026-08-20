@@ -89,7 +89,7 @@ if not api_key:
 if api_key:
     # AQUÍ ES DONDE SE CONFIGURA Y LLAMA A LA IA OFICIALMENTE
     genai.configure(api_key=api_key)
-    # Usamos gemini-1.5-flash porque es el modelo estable y rápido
+    # Usamos gemini-2.5-flash porque es el modelo estable y rápido
     modelo_ia = genai.GenerativeModel('gemini-1.5-flash')
 
 if "chat_history" not in st.session_state:
