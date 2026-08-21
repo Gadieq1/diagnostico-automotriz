@@ -10,7 +10,7 @@ from google.genai import types
 # ============================================================
 
 st.set_page_config(
-    page_title="IA Diagnóstico Automotriz",
+    page_title="IA Diagnóstico Automotriz Hecha por Gadiel",
     page_icon="🚗",
     layout="wide",
     initial_sidebar_state="collapsed"
