@@ -993,5 +993,5 @@ with tab3:
 st.divider()
 
 st.caption(
-    f"IA Diagnóstico Automotriz • Modelo: {MODEL_NAME}"
+    f"IA Diagnóstico Hecho por Gadiel • Modelo: {MODEL_NAME}"
 )
